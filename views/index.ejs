@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>
+    </title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.1/socket.io.js"></script>
+</head>
+<style>
+    li {
+        list-style: none;
+    }
+    
+    .another {
+        float: left;
+    }
+    
+    .me {
+        float: right
+    }
+    
+    .infoChat {
+        text-align: center;
+    }
+    
+    .clearFix::after {
+        display: block;
+        clear: both;
+        content: "";
+    }
+</style>
+
+<body>
+    <div>
+        <ul class="chatWrapper">
+
+        </ul>
+        <input id="txt" type="text">
+        <button id="send">전송</button>
+    </div>
+</body>
+<script>
+    var localstorage = window.localStorage;
+    var socket = io('ws://localhost:3000')
+    var wrapper = document.querySelector('.chatWrapper')
+    var myData = {
+        'uuid': localstorage.getItem('uuid'),
+        'me': 'seller',
+        'trade_number': 1231233
+    }
+
+    if (localstorage.getItem('uuid') == null) {
+        localstorage.setItem('uuid', Math.random().toString(24));
+    }
+
+    socket.on('connected', function(data) {
+        socket.emit('login', myData);
+    });
+
+    socket.emit('enter', myData);
+
+    socket.on('join', function(data) {
+        console.log(data)
+        joinChat(data)
+    });
+
+    socket.on('history', function(data) {
+        for (var i = 0; i < data.length; i++) {
+            appendChat(data[i])
+        }
+    });
+
+    socket.on('receive', function(data) {
+        appendChat(data)
+    });
+
+    socket.on('disconnecting', function(data) {
+        socket.emit('alive', true)
+    });
+
+    socket.on('disconnectUser', function(data) {
+        leaveChat(data)
+    });
+
+    socket.on('heartbeat', function(data) {
+        //console.log('ping')
+        socket.emit('heartbeat', {
+            beat: 1
+        });
+    });
+
+    document.querySelector('#send').addEventListener('click', function() {
+        var txt = document.querySelector('#txt')
+        myData.msg = txt.value
+        txt.value = ''
+        socket.emit('send', myData)
+        appendChat(myData)
+    });
+
+    function appendChat(data) {
+        var statement = '<li class="clearFix">'
+        switch (data.uuid != myData.uuid) {
+            case true:
+                statement += '<div class="another">'
+                statement += '<span>상대방 : <span><span>' + data.msg + '</span>'
+                statement += '</div>'
+                break;
+            case false:
+                statement += '<div class="me">'
+                statement += '<span>나 : <span><span>' + data.msg + '</span>'
+                statement += '</div>'
+                break;
+        }
+
+        statement += '</li>'
+        wrapper.insertAdjacentHTML('beforeend', statement);
+    }
+
+    function joinChat(data) {
+        var statement = '<li class="infoChat clearFix"><span>' + data.me + '님이 입장하였습니다.</span></li>'
+        wrapper.insertAdjacentHTML('beforeend', statement);
+    }
+
+    function leaveChat(data) {
+        var statement = '<li class="infoChat clearFix"><span>' + data.me + '님이 퇴장하였습니다.</span></li>'
+        wrapper.insertAdjacentHTML('beforeend', statement);
+    }
+</script>
+
+</html>
