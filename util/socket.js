@@ -8,7 +8,7 @@ let userList = [];
 let chatHistory = [];
 let newJoinFlag = true;
 let connected = true;
-let refreshCounter = 0;
+
 io.on("connection", (socket) => {
 
     let user = null;
@@ -37,7 +37,7 @@ io.on("connection", (socket) => {
         let newRoom = {
             'id': Math.random().toString(24),
             'name': data,
-            'userList': [user]
+            'userList': []
         }
         roomList.push(newRoom);
         socket.emit('makeRoomSucess', newRoom);
@@ -82,7 +82,7 @@ io.on("connection", (socket) => {
     });
 
     socket.on('disconnect', (reason) => {
-        setTimeout(() => {
+        var clear = setTimeout(() => {
             if (!connected && user != null) { //리프레시인지 종료인지 체크
                 let room = getRoomElement(user.roomName) // 현재 소켓의 방 체크
                 io.in(user.roomName).clients((err, clients) => {
@@ -111,8 +111,11 @@ io.on("connection", (socket) => {
                 });
 
             };
-        }, 1000);
+        }, 1000); //최종적으로 세션으로 체크해야할지 고민
 
+        if (connected) {
+            clearTimeout(clear);
+        }
     });
 
 
