@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>
+    </title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.3.1/socket.io.js"></script>
+</head>
+<style>
+    li {
+        list-style: none;
+    }
+    
+    .another {
+        float: left;
+    }
+    
+    .me {
+        float: right
+    }
+    
+    .infoChat {
+        text-align: center;
+    }
+    
+    .clearFix::after {
+        display: block;
+        clear: both;
+        content: "";
+    }
+</style>
+
+<body>
+    <div>
+        <ul class="chatWrapper">
+
+        </ul>
+        <input id="txt" type="text">
+        <button id="send">전송</button>
+    </div>
+</body>
+<script src="/javascripts/client.js">
+</script>
+<script>
+    window.onload = function() {
+        var roomName = '<%= room %>';
+        var localstorage = window.localStorage;
+
+        var sclient = new SClient({
+            'uuid': localstorage.getItem('uuid');
+        });
+
+        sclient.enter(roomName);
+
+        var sendBtn = document.querySelector('#send');
+
+        sendBtn.addEventListener('click', function() {
+            var txt = document.querySelector('#txt');
+            sclient.send(txt);
+        })
+    }
+</script>
+
+</html>

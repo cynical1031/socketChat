@@ -3,62 +3,75 @@ const io = require('socket.io')({
     pingTimeout: 5000
 });
 
-// var Socket = {
-//     emit: function(event, data) {
-//         console.log(event, data);
-//         io.sockets.emit(event, data);
-//     }
-// };
+let roomList = [];
 let userList = [];
 let chatHistory = [];
 let newJoinFlag = true;
 let connected = true;
-
+let refreshCounter = 0;
 io.on("connection", (socket) => {
 
     let user = null;
 
     console.log("Socket Working !");
 
-    socket.emit('connected', socket.id)
+    socket.emit('connected', socket.id);
 
-    socket.on("login", (data) => {
-
-        checkUserList(data.uuid)
+    socket.on("login", (data) => { //소켓 최초 진입 시
 
         connected = true;
         user = data;
+
+        checkUserList(data.uuid); //현재 유저가 리프레시인지 다시 접속인지 체크
 
         if (newJoinFlag) {
             userList.push(user);
         }
     });
 
-    socket.on('enter', function(data) {
-        socket.join(data.trade_number);
+    socket.on('roomList', function() { // 현재 등록 되어있는 방 송출
+        socket.emit('roomList', roomList)
+    });
 
-        if (newJoinFlag) {
-            socket.to(data.trade_number).emit('join', data);
+    socket.on('makeRoom', function(data) { //새로운 방 등록
+        let newRoom = {
+            'id': Math.random().toString(24),
+            'name': data,
+            'userList': [user]
         }
+        roomList.push(newRoom);
+        socket.emit('makeRoomSucess', newRoom);
+    });
 
-        let findHistory = roomHistory(data.trade_number);
-        if (findHistory != null) {
-            socket.emit('history', findHistory.list);
+    socket.on('enter', function(data) { // 방 입장
+        let room = getRoomElement(data.roomName)
+        if (room != null) {
+            socket.join(room.id);
+
+            let newRoomJoinFlag = roomJoinCheck(room, data);
+
+            if (!newRoomJoinFlag) {
+                socket.to(room.id).emit('join', data);
+            }
+            let findHistory = roomHistory(room.id);
+            if (findHistory != null) {
+                socket.emit('history', findHistory.list);
+            }
+        } else {
+            socket.emit('enterFail')
         }
     });
 
-    socket.on("send", (data) => {
-
-        let findHistory = roomHistory(data.trade_number);
+    socket.on("send", (data) => { //채팅 전달
+        let findHistory = roomHistory(data.roomName);
         if (findHistory == null) {
-            //초기 채팅 리스트 푸시
-            let historyData = {
+            let historyData = { //초기 채팅 리스트 푸시
                 'room': getRoomName(socket),
                 'list': [data]
             }
-            chatHistory.push(historyData)
+            chatHistory.push(historyData); // 현재 방의 채팅 내용 로그
         } else {
-            findHistory.list.push(data)
+            findHistory.list.push(data);
         }
 
         socket.to(getRoomName(socket)).emit('receive', data);
@@ -66,34 +79,42 @@ io.on("connection", (socket) => {
 
     socket.on('disconnecting', (reason) => {
         connected = false;
-        socket.emit('disconnectingUser', connected)
     });
 
     socket.on('disconnect', (reason) => {
         setTimeout(() => {
             if (!connected && user != null) { //리프레시인지 종료인지 체크
-                io.of('/').adapter.clients([user.trade_number], (err, clients) => {
-
+                let room = getRoomElement(user.roomName) // 현재 소켓의 방 체크
+                io.in(user.roomName).clients((err, clients) => {
                     if (clients.length == 0) {
                         //해당 방의 클라이언트 수가 0이되면 해당 방의 채팅 리스트를 삭제 후 db 저장 처리 필요
-                        let findHistory = roomHistory(user.trade_number);
+
+                        let findHistory = roomHistory(user.roomName);
+                        if (room != null) { // 룸 리스트에서 방 삭제
+                            roomList.pop(room)
+                        }
                         if (findHistory != null) {
-                            chatHistory.pop(findHistory)
+                            chatHistory.pop(findHistory); //현재 방의 채팅 로그 삭제
                         }
                     }
 
-                    socket.to(user.trade_number).emit('disconnectUser', user);
-                    socket.leave(user.trade_number);
+                    socket.to(user.roomName).emit('disconnectUser', user); // 해당 방의 유저에게 디스커넥트 전달
+                    socket.leave(user.roomName); //최종 방 나감 처리
 
                     userList.pop(user);
+                    if (room != null) {
+                        room.userList.pop(user) //현재 방리스트에서 소켓 삭제
+                    }
+
                     user = null;
                     newJoinFlag = true;
                 });
 
             };
-        }, 100);
+        }, 1000);
 
     });
+
 
     socket.on('heartbeat', (data) => {
         //console.log('Received Pong: ', data);
@@ -111,7 +132,35 @@ checkUserList = (uuid) => {
     }
 }
 
+getRoomElement = (roomName) => {
+    //룸 찾기
+    let room = null;
+    for (var i = 0; i < roomList.length; i++) {
+        if (roomList[i].id == roomName) {
+            room = roomList[i];
+            break;
+        }
+    }
+    return room;
+}
+
+roomJoinCheck = (room, data) => {
+    //방의 접속체크(리프레시 후 방에 다시 들어올때)
+    let flag = false;
+    for (var i = 0; i < room.userList.length; i++) {
+        if (room.userList[i].uuid == data.uuid) {
+            flag = true;
+            break;
+        }
+    }
+    if (!flag) {
+        room.userList.push(data)
+    }
+    return flag
+}
+
 getRoomName = (socket) => {
+    //현재 소켓의 속해 있는 방 가져오기
     let rooms = Object.keys(socket.rooms).filter((item) => {
         return item !== socket.id;
     });
@@ -119,6 +168,7 @@ getRoomName = (socket) => {
 }
 
 roomHistory = (roomName) => {
+    // 방의 채팅 로그 가져오기
     let findHistory = null;
     for (var i = 0; i < chatHistory.length; i++) {
         if (chatHistory[i].room[0] == roomName) {
@@ -130,15 +180,11 @@ roomHistory = (roomName) => {
 }
 
 sendHeartbeat = () => {
+    //ping pong
     setTimeout(sendHeartbeat, 8000);
     io.sockets.emit('heartbeat', { beat: 1 });
 }
 
 sendHeartbeat()
 
-// function clientsCheck(room) {
-//     let clients = io.adapter.rooms[room];
-//     return Object.keys(clients).length;
-// }
-//exports.Socket = Socket;
 exports.io = io;
